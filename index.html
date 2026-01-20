@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Staffing Matrix</title>
+  <link rel="stylesheet" href="./style.css"/>
+
+  <!-- Supabase JS (v2) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">⟁</div>
+      <div>
+        <div class="brand-title">Staffing Matrix</div>
+        <div class="brand-sub">Assign Professionals to Projects</div>
+      </div>
+    </div>
+
+    <div class="right-actions">
+      <button id="btnRefresh" class="btn ghost">Refresh</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="main">Main screen</button>
+    <button class="tab" data-tab="pro-maint">Professionals maintenance</button>
+    <button class="tab" data-tab="proj-maint">Projects maintenance</button>
+  </nav>
+
+  <main class="container">
+    <!-- MAIN -->
+    <section id="tab-main" class="tabpanel active">
+      <div class="split">
+        <aside class="pane">
+          <div class="pane-header">
+            <h2>Professionals</h2>
+            <div class="row gap">
+              <select id="sortPros" class="input">
+                <option value="name">Sort: Name</option>
+                <option value="available">Sort: Availability date</option>
+              </select>
+              <input id="proSearch" class="input" placeholder="Search name/title..." />
+            </div>
+          </div>
+          <div id="professionalsList" class="list"></div>
+        </aside>
+
+        <section class="pane">
+          <div class="pane-header">
+            <h2>Projects & Roles</h2>
+            <div class="hint">
+              Drag <b>Professional → Role</b> or <b>Role → Professional</b> to create an <b>Actual</b> assignment.
+              Use maintenance tabs to create Proposed allocations too (or extend UI later).
+            </div>
+            <input id="projectSearch" class="input" placeholder="Search projects/roles..." />
+          </div>
+
+          <div id="projectsList" class="projects"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- PROFESSIONALS MAINT -->
+    <section id="tab-pro-maint" class="tabpanel">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Professionals maintenance</h2>
+          <button id="btnAddPro" class="btn">+ Add Professional</button>
+        </div>
+        <div id="prosTable" class="table"></div>
+      </div>
+    </section>
+
+    <!-- PROJECTS MAINT -->
+    <section id="tab-proj-maint" class="tabpanel">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Projects maintenance</h2>
+          <div class="row gap">
+            <button id="btnAddProject" class="btn">+ Add Project</button>
+            <button id="btnAddRole" class="btn ghost">+ Add Role</button>
+          </div>
+        </div>
+        <div id="projectsTable" class="table"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal -->
+  <div id="modalBackdrop" class="backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Modal</h3>
+        <button id="modalClose" class="iconbtn">✕</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+      <div class="modal-footer">
+        <button id="modalCancel" class="btn ghost">Cancel</button>
+        <button id="modalSave" class="btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
