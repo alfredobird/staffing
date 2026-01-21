@@ -8,6 +8,149 @@
 
   <!-- Supabase JS (v2) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- XLSX (optional; if you already added import) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Small additions (so you don't need to touch style.css) -->
+  <style>
+    .alloc-x{
+      border:1px solid var(--line);
+      background: rgba(15,22,32,.25);
+      color: var(--muted);
+      border-radius: 10px;
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+    }
+    .alloc-x:hover{
+      color: var(--danger);
+      border-color: rgba(255,107,107,.35);
+    }
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      border:1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 11px;
+      color: var(--muted);
+      background: rgba(11,15,20,.30);
+      margin-left: 8px;
+      white-space: nowrap;
+    }
+    .pill b{ color: var(--text); font-weight:600; }
+    .pill.actual{ border-color: rgba(123,211,137,.25); }
+    .pill.proposed{ border-color: rgba(255,209,102,.25); }
+
+    /* Gantt (minimal styling) */
+    .gantt-wrap{
+      overflow:auto;
+      border:1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(11,15,20,.28);
+    }
+    .gantt{
+      min-width: 1100px;
+    }
+    .gantt-header, .gantt-row{
+      display:grid;
+      grid-template-columns: 320px 1fr;
+      gap: 10px;
+      align-items: stretch;
+    }
+    .gantt-header{
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: rgba(11,15,20,.85);
+      backdrop-filter: blur(8px);
+      border-bottom:1px solid var(--line);
+    }
+    .gantt-left{
+      padding: 10px 12px;
+      border-right:1px solid var(--line);
+    }
+    .gantt-right{
+      padding: 10px 12px;
+    }
+    .gantt-months{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 6px;
+    }
+    .gantt-month{
+      border:1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 8px;
+      font-size: 12px;
+      color: var(--muted);
+      background: rgba(15,22,32,.25);
+      text-align:center;
+      white-space: nowrap;
+    }
+    .gantt-row{
+      border-bottom:1px solid rgba(28,42,58,.55);
+    }
+    .gantt-person{
+      padding: 10px 12px;
+      border-right:1px solid var(--line);
+      display:flex;
+      flex-direction:column;
+      gap: 6px;
+    }
+    .gantt-person .top{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+    }
+    .gantt-person .meta{
+      font-size: 12px;
+      color: var(--muted);
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 10px;
+    }
+    .gantt-lane{
+      position: relative;
+      padding: 10px 12px;
+    }
+    .gantt-grid{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 6px;
+      height: 44px;
+    }
+    .gantt-cell{
+      border:1px solid rgba(28,42,58,.65);
+      border-radius: 10px;
+      background: rgba(15,22,32,.18);
+    }
+    .gantt-bar{
+      position:absolute;
+      top: 14px;
+      height: 28px;
+      border-radius: 12px;
+      border:1px solid rgba(94,234,212,.25);
+      background: rgba(94,234,212,.12);
+      color: var(--text);
+      font-size: 11px;
+      padding: 6px 10px;
+      overflow:hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: default;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    .gantt-bar.proposed{
+      border-color: rgba(255,209,102,.30);
+      background: rgba(255,209,102,.12);
+    }
+  </style>
 </head>
 <body>
   <header class="topbar">
@@ -21,11 +164,13 @@
 
     <div class="right-actions">
       <button id="btnRefresh" class="btn ghost">Refresh</button>
+      <button id="btnImport" class="btn">Import Excel</button>
     </div>
   </header>
 
   <nav class="tabs">
     <button class="tab active" data-tab="main">Main screen</button>
+    <button class="tab" data-tab="gantt">Gantt</button>
     <button class="tab" data-tab="pro-maint">Professionals maintenance</button>
     <button class="tab" data-tab="proj-maint">Projects maintenance</button>
   </nav>
@@ -53,13 +198,35 @@
             <h2>Projects & Roles</h2>
             <div class="hint">
               Drag <b>Professional → Role</b> or <b>Role → Professional</b> to create an <b>Actual</b> assignment.
-              Use maintenance tabs to create Proposed allocations too (or extend UI later).
+              (You can also choose Proposed in the assignment modal.)
             </div>
             <input id="projectSearch" class="input" placeholder="Search projects/roles..." />
           </div>
 
           <div id="projectsList" class="projects"></div>
         </section>
+      </div>
+    </section>
+
+    <!-- GANTT -->
+    <section id="tab-gantt" class="tabpanel">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Gantt (next 12 months)</h2>
+          <div class="row gap" style="width:min(640px, 100%);">
+            <select id="sortGantt" class="input" style="max-width:260px;">
+              <option value="name">Sort: Name</option>
+              <option value="available">Sort: Availability date</option>
+            </select>
+            <input id="ganttSearch" class="input" placeholder="Search name/title..." />
+          </div>
+        </div>
+
+        <div style="padding:12px;">
+          <div class="gantt-wrap">
+            <div id="ganttRoot" class="gantt"></div>
+          </div>
+        </div>
       </div>
     </section>
 
