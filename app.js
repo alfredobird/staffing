@@ -198,11 +198,12 @@ function render() {
   renderGantt();
 }
 
+/* ========= MAIN ========= */
 function renderMain() {
-  const search = (proSearchEl?.value || "").toLowerCase().trim();
-  const sortMode = sortProsEl?.value || "name";
+  const search = (proSearchEl.value || "").toLowerCase().trim();
+  const sortMode = sortProsEl.value;
 
-  const proComputed = (cache.professionals || []).map(p => {
+  const proComputed = cache.professionals.map(p => {
     const util = currentUtilSummary(p.id);
     const available = computeAvailableDate(p.id);
     return { ...p, _util: util, _available: available };
@@ -213,31 +214,27 @@ function renderMain() {
   );
 
   if (sortMode === "name") {
-    filtered.sort((a,b) => a.full_name.localeCompare(b.full_name));
+    filtered.sort((a, b) => a.full_name.localeCompare(b.full_name));
   } else {
-    filtered.sort((a,b) => {
+    filtered.sort((a, b) => {
       const da = a._available === "—" ? "9999-12-31" : a._available;
       const db = b._available === "—" ? "9999-12-31" : b._available;
       return da.localeCompare(db) || a.full_name.localeCompare(b.full_name);
     });
   }
 
-  if (professionalsListEl) {
-    professionalsListEl.innerHTML = "";
-    for (const p of filtered) {
-      professionalsListEl.appendChild(renderProfessionalCard(p));
-    }
+  professionalsListEl.innerHTML = "";
+  for (const p of filtered) {
+    professionalsListEl.appendChild(renderProfessionalCard(p));
   }
 
-  const pSearch = (projectSearchEl?.value || "").toLowerCase().trim();
-  if (projectsListEl) {
-    projectsListEl.innerHTML = "";
-    for (const proj of (cache.projects || [])) {
-      const roles = (cache.roles || []).filter(r => r.project_id === proj.id);
-      const matches = (proj.name + " " + roles.map(r => r.role_name).join(" ")).toLowerCase().includes(pSearch);
-      if (!matches) continue;
-      projectsListEl.appendChild(renderProjectBlock(proj, roles));
-    }
+  const pSearch = (projectSearchEl.value || "").toLowerCase().trim();
+  projectsListEl.innerHTML = "";
+  for (const proj of cache.projects) {
+    const roles = cache.roles.filter(r => r.project_id === proj.id);
+    const matches = (proj.name + " " + roles.map(r => r.role_name).join(" ")).toLowerCase().includes(pSearch);
+    if (!matches) continue;
+    projectsListEl.appendChild(renderProjectBlock(proj, roles));
   }
 }
 
@@ -311,8 +308,8 @@ function renderProfessionalCard(p) {
     const payload = safeParse(e.dataTransfer.getData("text/plain"));
     if (!payload || payload.type !== "role") return;
 
-    const role = (cache.roles || []).find(r => r.id === payload.project_role_id);
-    const proj = (cache.projects || []).find(pr => pr.id === payload.project_id);
+    const role = cache.roles.find(r => r.id === payload.project_role_id);
+    const proj = cache.projects.find(pr => pr.id === payload.project_id);
     if (!role || !proj) return;
 
     await assignmentFlow({
@@ -331,8 +328,8 @@ function renderProfessionalCard(p) {
 }
 
 function renderAllocLineWithDelete(a) {
-  const proj = (cache.projects || []).find(p => p.id === a.project_id);
-  const role = a.project_role_id ? (cache.roles || []).find(r => r.id === a.project_role_id) : null;
+  const proj = cache.projects.find(p => p.id === a.project_id);
+  const role = a.project_role_id ? cache.roles.find(r => r.id === a.project_role_id) : null;
   const left = `${escapeHtml(proj?.name || "Project")} · ${escapeHtml(role?.role_name || "Role")}`;
   const right = `${a.percent}% · ${formatDateRange(a.start_date, a.end_date)}`;
 
@@ -349,11 +346,11 @@ function renderAllocLineWithDelete(a) {
 
 /* ========= Projects pane: show assignees per role ========= */
 function roleAssignees(roleId) {
-  const allocs = (cache.allocations || []).filter(a => a.project_role_id === roleId);
+  const allocs = cache.allocations.filter(a => a.project_role_id === roleId);
   const byPro = new Map(); // pid -> { name, hasActual, hasProposed }
 
   for (const a of allocs) {
-    const pro = (cache.professionals || []).find(p => p.id === a.professional_id);
+    const pro = cache.professionals.find(p => p.id === a.professional_id);
     if (!pro) continue;
     const cur = byPro.get(pro.id) || { name: pro.full_name, hasActual: false, hasProposed: false };
     if (a.kind === "actual") cur.hasActual = true;
@@ -361,7 +358,7 @@ function roleAssignees(roleId) {
     byPro.set(pro.id, cur);
   }
 
-  return Array.from(byPro.values()).sort((a,b) => a.name.localeCompare(b.name));
+  return Array.from(byPro.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function renderProjectBlock(proj, roles) {
@@ -385,12 +382,12 @@ function renderProjectBlock(proj, roles) {
 
     const chips = assignees.length
       ? assignees.map(a => {
-          const parts = [
-            a.hasActual ? `<span class="pill actual"><b>A</b> ${escapeHtml(a.name)}</span>` : "",
-            a.hasProposed ? `<span class="pill proposed"><b>P</b> ${escapeHtml(a.name)}</span>` : ""
-          ].filter(Boolean);
-          return parts.join("");
-        }).join("")
+        const parts = [
+          a.hasActual ? `<span class="pill actual"><b>A</b> ${escapeHtml(a.name)}</span>` : "",
+          a.hasProposed ? `<span class="pill proposed"><b>P</b> ${escapeHtml(a.name)}</span>` : ""
+        ].filter(Boolean);
+        return parts.join("");
+      }).join("")
       : `<span class="small">No assignees</span>`;
 
     const roleEl = document.createElement("div");
@@ -430,7 +427,7 @@ function renderProjectBlock(proj, roles) {
       const payload = safeParse(e.dataTransfer.getData("text/plain"));
       if (!payload || payload.type !== "professional") return;
 
-      const professional = (cache.professionals || []).find(p => p.id === payload.professional_id);
+      const professional = cache.professionals.find(p => p.id === payload.professional_id);
       if (!professional) return;
 
       await assignmentFlow({
@@ -451,17 +448,17 @@ function renderProjectBlock(proj, roles) {
   return wrap;
 }
 
-/* ========= Maintenance views ========= */
+/* ========= PROFESSIONALS MAINT ========= */
 function renderProMaintenance() {
   if (!prosTableEl) return;
   prosTableEl.innerHTML = "";
 
-  for (const p of (cache.professionals || [])) {
+  for (const p of cache.professionals) {
     const row = document.createElement("div");
     row.className = "table-row";
     row.innerHTML = `
       <div><b>${escapeHtml(p.full_name)}</b><div class="sub">${escapeHtml(p.title)}</div></div>
-      <div class="sub">ID: <span style="font-family:var(--mono)">${p.id.slice(0,8)}…</span></div>
+      <div class="sub">ID: <span style="font-family:var(--mono)">${p.id.slice(0, 8)}…</span></div>
       <div class="sub">Updated: ${new Date(p.updated_at).toLocaleString()}</div>
       <div class="actions">
         <button class="btn ghost" data-act="edit">Edit</button>
@@ -478,22 +475,24 @@ function renderProMaintenance() {
   }
 }
 
+/* ========= PROJECTS MAINT ========= */
 function renderProjectMaintenance() {
   if (!projectsTableEl) return;
   projectsTableEl.innerHTML = "";
 
-  for (const proj of (cache.projects || [])) {
+  for (const proj of cache.projects) {
     const row = document.createElement("div");
     row.className = "table-row";
     row.innerHTML = `
       <div><b>${escapeHtml(proj.name)}</b><div class="sub">${proj.start_date} → ${proj.end_date}</div></div>
-      <div class="sub">${(cache.roles || []).filter(r => r.project_id === proj.id).length} roles</div>
+      <div class="sub">${cache.roles.filter(r => r.project_id === proj.id).length} roles</div>
       <div class="sub">Updated: ${new Date(proj.updated_at).toLocaleString()}</div>
       <div class="actions">
         <button class="btn ghost" data-act="edit">Edit</button>
         <button class="btn ghost" data-act="delete" style="border-color:rgba(255,107,107,.35); color:var(--danger)">Delete</button>
       </div>
     `;
+
     row.querySelector('[data-act="edit"]').addEventListener("click", () => openProjectModal(proj));
     row.querySelector('[data-act="delete"]').addEventListener("click", async () => {
       if (!confirm(`Delete project "${proj.name}"? This deletes roles & allocations.`)) return;
@@ -501,7 +500,50 @@ function renderProjectMaintenance() {
       await refresh();
     });
 
+    // Roles under the project
+    const roleList = document.createElement("div");
+    roleList.className = "card";
+    roleList.style.marginTop = "10px";
+
+    const roles = cache.roles.filter(r => r.project_id === proj.id);
+    roleList.innerHTML = `
+      <div class="small" style="margin-bottom:10px;">Roles</div>
+      ${roles.length ? roles.map(r => `
+        <div class="alloc" style="align-items:center;">
+          <div class="left">
+            <b>${escapeHtml(r.role_name)}</b>
+            <div class="sub">${r.start_date} → ${r.end_date}</div>
+          </div>
+          <div class="right">
+            ${r.required_percent}%
+            <button class="btn ghost" data-role-edit="${r.id}" style="margin-left:10px;">Edit</button>
+            <button class="btn ghost" data-role-del="${r.id}" style="margin-left:8px; border-color:rgba(255,107,107,.35); color:var(--danger)">Delete</button>
+          </div>
+        </div>
+      `).join("") : `<div class="small">—</div>`}
+    `;
+
+    roleList.querySelectorAll("[data-role-edit]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-role-edit");
+        const role = cache.roles.find(r => r.id === id);
+        openRoleModal(role);
+      });
+    });
+
+    roleList.querySelectorAll("[data-role-del]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-role-del");
+        const role = cache.roles.find(r => r.id === id);
+        if (!role) return;
+        if (!confirm(`Delete role "${role.role_name}"?`)) return;
+        await deleteRow("project_roles", role.id);
+        await refresh();
+      });
+    });
+
     projectsTableEl.appendChild(row);
+    projectsTableEl.appendChild(roleList);
   }
 }
 
@@ -619,8 +661,8 @@ function renderGantt() {
         const bar = document.createElement("div");
         bar.className = "gantt-bar" + (a.kind === "proposed" ? " proposed" : "");
 
-        const proj = (cache.projects || []).find(x => x.id === a.project_id);
-        const role = a.project_role_id ? (cache.roles || []).find(x => x.id === a.project_role_id) : null;
+        const proj = cache.projects.find(x => x.id === a.project_id);
+        const role = a.project_role_id ? cache.roles.find(x => x.id === a.project_role_id) : null;
         const label = `${proj?.name || "Project"} · ${role?.role_name || "Role"} · ${a.percent}%`;
 
         const startMs = Date.parse(a.start_date + "T00:00:00Z");
@@ -724,16 +766,18 @@ function openModal({ title, bodyHtml, onSave }) {
   modalState = { onSave };
   modalBackdrop.classList.remove("hidden");
 }
+
 function closeModal() {
   modalBackdrop.classList.add("hidden");
   modalState = null;
 }
-modalClose?.addEventListener("click", closeModal);
-modalCancel?.addEventListener("click", closeModal);
-modalBackdrop?.addEventListener("click", (e) => {
+
+modalClose.addEventListener("click", closeModal);
+modalCancel.addEventListener("click", closeModal);
+modalBackdrop.addEventListener("click", (e) => {
   if (e.target === modalBackdrop) closeModal();
 });
-modalSave?.addEventListener("click", async () => {
+modalSave.addEventListener("click", async () => {
   if (!modalState?.onSave) return closeModal();
   try {
     const ok = await modalState.onSave();
@@ -744,10 +788,139 @@ modalSave?.addEventListener("click", async () => {
   }
 });
 
-/* ========= Minimal CRUD modals (optional) ========= */
-function openProModal(p) { alert("Pro maintenance modal not included in this paste. If you need it, tell me and I’ll merge it in."); }
-function openProjectModal(p) { alert("Project maintenance modal not included in this paste. If you need it, tell me and I’ll merge it in."); }
-function openRoleModal(p) { alert("Role maintenance modal not included in this paste. If you need it, tell me and I’ll merge it in."); }
+/* ========= CRUD MODALS ========= */
+function openProModal(p) {
+  const isNew = !p;
+  openModal({
+    title: isNew ? "Add Professional" : "Edit Professional",
+    bodyHtml: `
+      <div class="form">
+        <div class="field full">
+          <div class="label">Full name</div>
+          <input id="proName" class="input" value="${escapeAttr(p?.full_name || "")}" />
+        </div>
+        <div class="field full">
+          <div class="label">Title</div>
+          <input id="proTitle" class="input" value="${escapeAttr(p?.title || "")}" />
+        </div>
+      </div>
+    `,
+    onSave: async () => {
+      const full_name = document.getElementById("proName").value.trim();
+      const title = document.getElementById("proTitle").value.trim();
+      if (!full_name || !title) { alert("Name and title are required."); return false; }
+
+      if (isNew) {
+        const res = await sb.from("professionals").insert([{ full_name, title }]);
+        if (res.error) throw res.error;
+      } else {
+        await updateRow("professionals", p.id, { full_name, title });
+      }
+      await refresh();
+      return true;
+    }
+  });
+}
+
+function openProjectModal(proj) {
+  const isNew = !proj;
+  openModal({
+    title: isNew ? "Add Project" : "Edit Project",
+    bodyHtml: `
+      <div class="form">
+        <div class="field full">
+          <div class="label">Project name</div>
+          <input id="projName" class="input" value="${escapeAttr(proj?.name || "")}" />
+        </div>
+        <div class="field">
+          <div class="label">Start date</div>
+          <input id="projStart" class="input" type="date" value="${escapeAttr(proj?.start_date || todayISO())}" />
+        </div>
+        <div class="field">
+          <div class="label">End date</div>
+          <input id="projEnd" class="input" type="date" value="${escapeAttr(proj?.end_date || todayISO())}" />
+        </div>
+      </div>
+    `,
+    onSave: async () => {
+      const name = document.getElementById("projName").value.trim();
+      const start_date = document.getElementById("projStart").value;
+      const end_date = document.getElementById("projEnd").value;
+      if (!name || !start_date || !end_date) { alert("All fields required."); return false; }
+      if (end_date < start_date) { alert("End date cannot be before start date."); return false; }
+
+      if (isNew) {
+        const res = await sb.from("projects").insert([{ name, start_date, end_date }]);
+        if (res.error) throw res.error;
+      } else {
+        await updateRow("projects", proj.id, { name, start_date, end_date });
+      }
+      await refresh();
+      return true;
+    }
+  });
+}
+
+function openRoleModal(role) {
+  const isNew = !role;
+  const projectOptions = cache.projects
+    .map(p => `<option value="${p.id}"${role?.project_id === p.id ? " selected" : ""}>${escapeHtml(p.name)}</option>`)
+    .join("");
+
+  openModal({
+    title: isNew ? "Add Role" : "Edit Role",
+    bodyHtml: `
+      <div class="form">
+        <div class="field full">
+          <div class="label">Project</div>
+          <select id="roleProject" class="input">
+            ${projectOptions || `<option value="">(Create a project first)</option>`}
+          </select>
+        </div>
+        <div class="field full">
+          <div class="label">Role name</div>
+          <input id="roleName" class="input" value="${escapeAttr(role?.role_name || "")}" />
+        </div>
+        <div class="field">
+          <div class="label">Start date</div>
+          <input id="roleStart" class="input" type="date" value="${escapeAttr(role?.start_date || todayISO())}" />
+        </div>
+        <div class="field">
+          <div class="label">End date</div>
+          <input id="roleEnd" class="input" type="date" value="${escapeAttr(role?.end_date || todayISO())}" />
+        </div>
+        <div class="field">
+          <div class="label">Required percent (0–100)</div>
+          <input id="roleReq" class="input" type="number" min="0" max="100" value="${role?.required_percent ?? 0}" />
+        </div>
+      </div>
+    `,
+    onSave: async () => {
+      const project_id = document.getElementById("roleProject").value;
+      const role_name = document.getElementById("roleName").value.trim();
+      const start_date = document.getElementById("roleStart").value;
+      const end_date = document.getElementById("roleEnd").value;
+      const required_percent = clampInt(document.getElementById("roleReq").value, 0, 100);
+
+      if (!project_id) { alert("Select a project."); return false; }
+      if (!role_name || !start_date || !end_date) { alert("All fields required."); return false; }
+      if (end_date < start_date) { alert("End date cannot be before start date."); return false; }
+
+      if (isNew) {
+        const res = await sb.from("project_roles").insert([{
+          project_id, role_name, start_date, end_date, required_percent
+        }]);
+        if (res.error) throw res.error;
+      } else {
+        await updateRow("project_roles", role.id, {
+          project_id, role_name, start_date, end_date, required_percent
+        });
+      }
+      await refresh();
+      return true;
+    }
+  });
+}
 
 /* ========= Tabs + Events ========= */
 tabs.forEach(t => {
@@ -755,15 +928,15 @@ tabs.forEach(t => {
     tabs.forEach(x => x.classList.remove("active"));
     t.classList.add("active");
     const key = t.dataset.tab;
-    Object.entries(tabPanels).forEach(([k, el]) => el && el.classList.toggle("active", k === key));
+    Object.entries(tabPanels).forEach(([k, el]) => el.classList.toggle("active", k === key));
     if (key === "gantt") renderGantt();
   });
 });
 
-btnRefresh?.addEventListener("click", () => refresh());
-sortProsEl?.addEventListener("change", renderMain);
-proSearchEl?.addEventListener("input", renderMain);
-projectSearchEl?.addEventListener("input", renderMain);
+btnRefresh.addEventListener("click", () => refresh());
+sortProsEl.addEventListener("change", renderMain);
+proSearchEl.addEventListener("input", renderMain);
+projectSearchEl.addEventListener("input", renderMain);
 
 sortGanttEl?.addEventListener("change", renderGantt);
 ganttSearchEl?.addEventListener("input", renderGantt);
@@ -774,7 +947,7 @@ btnAddRole?.addEventListener("click", () => openRoleModal(null));
 
 btnImport?.addEventListener("click", () => {
   if (typeof openImportModal === "function") return openImportModal();
-  alert("Import modal not found. If you want, I can merge import into this file too.");
+  alert("Import modal not found in this app.js. If you want, I can paste the full openImportModal() implementation again.");
 });
 
 /* ========= INIT ========= */
@@ -794,9 +967,9 @@ function safeParse(s) {
 
 function escapeHtml(str) {
   return String(str ?? "")
-    .replaceAll("&","&amp;").replaceAll("<","&lt;")
-    .replaceAll(">","&gt;").replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;").replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 function escapeAttr(str) {
   return escapeHtml(str).replaceAll("\n", " ");
