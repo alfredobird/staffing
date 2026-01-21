@@ -1,21 +1,19 @@
-/* ========= SUPABASE CONFIG =========
-   1) Create a Supabase project
-   2) Paste your URL + anon key below
-*/
+/* ========= SUPABASE CONFIG =========*/
 const SUPABASE_URL = "https://iscorbmnboxytqgiqypq.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_odsZMZ8KyDkMAkVN7QMclg_Ju5dDOPN";
-
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* ========= UI ELEMENTS ========= */
 const tabs = document.querySelectorAll(".tab");
 const tabPanels = {
   main: document.getElementById("tab-main"),
+  gantt: document.getElementById("tab-gantt"),
   "pro-maint": document.getElementById("tab-pro-maint"),
   "proj-maint": document.getElementById("tab-proj-maint"),
 };
 
 const btnRefresh = document.getElementById("btnRefresh");
+const btnImport = document.getElementById("btnImport");
 
 const professionalsListEl = document.getElementById("professionalsList");
 const projectsListEl = document.getElementById("projectsList");
@@ -31,6 +29,10 @@ const btnAddPro = document.getElementById("btnAddPro");
 const btnAddProject = document.getElementById("btnAddProject");
 const btnAddRole = document.getElementById("btnAddRole");
 
+const sortGanttEl = document.getElementById("sortGantt");
+const ganttSearchEl = document.getElementById("ganttSearch");
+const ganttRootEl = document.getElementById("ganttRoot");
+
 /* ========= MODAL ========= */
 const modalBackdrop = document.getElementById("modalBackdrop");
 const modalTitle = document.getElementById("modalTitle");
@@ -39,7 +41,7 @@ const modalClose = document.getElementById("modalClose");
 const modalCancel = document.getElementById("modalCancel");
 const modalSave = document.getElementById("modalSave");
 
-let modalState = null; // { kind, data, onSave }
+let modalState = null;
 
 /* ========= DATA CACHE ========= */
 let cache = {
@@ -71,10 +73,7 @@ function formatDateRange(a, b) {
   return `${a} → ${b}`;
 }
 
-/* ========= BANDWIDTH + AVAILABILITY =========
-   Remaining Bandwidth (at a moment) = 100 - (Actual Util) - (Proposed Util)
-   Available Date: earliest week start where Remaining drops below 80%
-*/
+/* ========= BANDWIDTH + AVAILABILITY ========= */
 function allocationsForProfessional(pid) {
   return cache.allocations.filter(a => a.professional_id === pid);
 }
@@ -96,7 +95,7 @@ function remainingAtDate(pid, dateISO) {
 
 function computeAvailableDate(pid) {
   const start = todayISO();
-  const horizonWeeks = 26; // next ~6 months
+  const horizonWeeks = 26; // ~6 months
   for (let w = 0; w <= horizonWeeks; w++) {
     const d = addDays(start, w * 7);
     const rem = remainingAtDate(pid, d);
@@ -110,6 +109,13 @@ function currentUtilSummary(pid) {
   const proposed = sumPercentAtDate(pid, "proposed", todayISO());
   const rem = 100 - actual - proposed;
   return { actual, proposed, rem };
+}
+
+function bandwidthDot(rem) {
+  // green if above 80%, red if below 50%, yellow otherwise
+  if (rem > 80) return "🟢";
+  if (rem < 50) return "🔴";
+  return "🟡";
 }
 
 function badgeForRemaining(rem) {
@@ -139,14 +145,15 @@ async function loadAll() {
 }
 
 async function createAllocation({ professional_id, project_id, project_role_id, kind, percent, start_date, end_date }) {
-  // Enforce 0..100 percent and bandwidth constraint at "today" as a minimum.
   const pct = clampInt(percent, 0, 100);
 
-  // Basic guard: prevent exceeding 100% at the assignment start date.
+  // Guard: prevent exceeding 100% at allocation start date
   const actualAtStart = sumPercentAtDate(professional_id, "actual", start_date);
   const proposedAtStart = sumPercentAtDate(professional_id, "proposed", start_date);
-  const nextTotal = (kind === "actual" ? (actualAtStart + pct) : actualAtStart) +
-                    (kind === "proposed" ? (proposedAtStart + pct) : proposedAtStart);
+
+  const nextTotal =
+    (kind === "actual" ? (actualAtStart + pct) : actualAtStart) +
+    (kind === "proposed" ? (proposedAtStart + pct) : proposedAtStart);
 
   if (nextTotal > 100) {
     alert(`Cannot assign: total utilization would be ${nextTotal}% (> 100%).`);
@@ -167,6 +174,11 @@ async function createAllocation({ professional_id, project_id, project_role_id, 
   return ins.data;
 }
 
+async function deleteAllocation(allocationId) {
+  const res = await sb.from("allocations").delete().eq("id", allocationId);
+  if (res.error) throw res.error;
+}
+
 async function updateRow(table, id, patch) {
   const res = await sb.from(table).update(patch).eq("id", id).select().single();
   if (res.error) throw res.error;
@@ -183,6 +195,7 @@ function render() {
   renderMain();
   renderProMaintenance();
   renderProjectMaintenance();
+  renderGantt();
 }
 
 function renderMain() {
@@ -190,19 +203,16 @@ function renderMain() {
   const sortMode = sortProsEl.value;
 
   let pros = [...cache.professionals];
-  // compute for sort
   const proComputed = pros.map(p => {
     const util = currentUtilSummary(p.id);
     const available = computeAvailableDate(p.id);
     return { ...p, _util: util, _available: available };
   });
 
-  // filter
   let filtered = proComputed.filter(p =>
     (p.full_name + " " + p.title).toLowerCase().includes(search)
   );
 
-  // sort
   if (sortMode === "name") {
     filtered.sort((a,b) => a.full_name.localeCompare(b.full_name));
   } else {
@@ -237,8 +247,8 @@ function renderProfessionalCard(p) {
   const { actual, proposed, rem } = p._util;
   const badge = badgeForRemaining(rem);
   const available = p._available;
+  const dot = bandwidthDot(rem);
 
-  // allocations lists
   const allocs = allocationsForProfessional(p.id);
   const actualAlloc = allocs.filter(a => a.kind === "actual");
   const proposedAlloc = allocs.filter(a => a.kind === "proposed");
@@ -246,7 +256,7 @@ function renderProfessionalCard(p) {
   card.innerHTML = `
     <div class="card-title">
       <div>
-        <div class="name">${escapeHtml(p.full_name)}</div>
+        <div class="name">${dot} ${escapeHtml(p.full_name)}</div>
         <div class="sub">${escapeHtml(p.title)}</div>
       </div>
       <div class="badge ${badge.cls}">Remaining: ${badge.text}</div>
@@ -260,13 +270,25 @@ function renderProfessionalCard(p) {
 
     <div class="allocs">
       <div class="small">Current/Upcoming Assignments</div>
-      ${actualAlloc.length ? actualAlloc.map(a => renderAllocLine(a)).join("") : `<div class="small">—</div>`}
+      ${actualAlloc.length ? actualAlloc.map(a => renderAllocLineWithDelete(a)).join("") : `<div class="small">—</div>`}
       <div class="small" style="margin-top:6px;">Proposed</div>
-      ${proposedAlloc.length ? proposedAlloc.map(a => renderAllocLine(a)).join("") : `<div class="small">—</div>`}
+      ${proposedAlloc.length ? proposedAlloc.map(a => renderAllocLineWithDelete(a)).join("") : `<div class="small">—</div>`}
     </div>
   `;
 
-  // drag events
+  // wire delete clicks (event delegation)
+  card.querySelectorAll("[data-del-alloc]").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute("data-del-alloc");
+      if (!id) return;
+      if (!confirm("Remove this assignment?")) return;
+      await deleteAllocation(id);
+      await refresh();
+    });
+  });
+
+  // drag events (professional -> role)
   card.addEventListener("dragstart", (e) => {
     e.dataTransfer.setData("text/plain", JSON.stringify({
       type: "professional",
@@ -274,7 +296,7 @@ function renderProfessionalCard(p) {
     }));
   });
 
-  // allow dropping role onto professional
+  // allow dropping role onto professional (role -> professional)
   card.addEventListener("dragover", (e) => {
     e.preventDefault();
     card.classList.add("dragover");
@@ -305,12 +327,40 @@ function renderProfessionalCard(p) {
   return card;
 }
 
-function renderAllocLine(a) {
+function renderAllocLineWithDelete(a) {
   const proj = cache.projects.find(p => p.id === a.project_id);
   const role = a.project_role_id ? cache.roles.find(r => r.id === a.project_role_id) : null;
   const left = `${escapeHtml(proj?.name || "Project")} · ${escapeHtml(role?.role_name || "Role")}`;
   const right = `${a.percent}% · ${formatDateRange(a.start_date, a.end_date)}`;
-  return `<div class="alloc"><div class="left">${left}</div><div class="right">${escapeHtml(right)}</div></div>`;
+
+  return `
+    <div class="alloc" style="align-items:center;">
+      <div class="left">${left}</div>
+      <div class="right" style="display:flex; align-items:center; gap:10px;">
+        <span>${escapeHtml(right)}</span>
+        <button class="alloc-x" title="Remove assignment" data-del-alloc="${a.id}">✕</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ========= Projects pane: show assignees per role ========= */
+function roleAssignees(roleId) {
+  const allocs = cache.allocations.filter(a => a.project_role_id === roleId);
+
+  // group by professional, show A/P flags
+  const byPro = new Map(); // pid -> { name, hasActual, hasProposed }
+  for (const a of allocs) {
+    const pro = cache.professionals.find(p => p.id === a.professional_id);
+    if (!pro) continue;
+    const cur = byPro.get(pro.id) || { name: pro.full_name, hasActual: false, hasProposed: false };
+    if (a.kind === "actual") cur.hasActual = true;
+    if (a.kind === "proposed") cur.hasProposed = true;
+    byPro.set(pro.id, cur);
+  }
+
+  const arr = Array.from(byPro.values()).sort((a,b) => a.name.localeCompare(b.name));
+  return arr;
 }
 
 function renderProjectBlock(proj, roles) {
@@ -330,15 +380,30 @@ function renderProjectBlock(proj, roles) {
 
   const rolesEl = wrap.querySelector(".roles");
   for (const r of roles) {
+    const assignees = roleAssignees(r.id);
+
+    const chips = assignees.length
+      ? assignees.map(a => {
+          const kinds = [
+            a.hasActual ? `<span class="pill actual"><b>A</b> ${escapeHtml(a.name)}</span>` : "",
+            a.hasProposed ? `<span class="pill proposed"><b>P</b> ${escapeHtml(a.name)}</span>` : ""
+          ].filter(Boolean).join("");
+          return kinds;
+        }).join("")
+      : `<span class="small">No assignees</span>`;
+
     const roleEl = document.createElement("div");
     roleEl.className = "role";
     roleEl.dataset.roleId = r.id;
     roleEl.draggable = true;
 
     roleEl.innerHTML = `
-      <div>
+      <div style="min-width: 0;">
         <div><b>${escapeHtml(r.role_name)}</b></div>
         <div class="meta">${r.start_date} → ${r.end_date}</div>
+        <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">
+          ${chips}
+        </div>
       </div>
       <div class="pct">Needs: ${r.required_percent}%</div>
     `;
@@ -385,6 +450,7 @@ function renderProjectBlock(proj, roles) {
   return wrap;
 }
 
+/* ========= Maintenance views (unchanged from prior version) ========= */
 function renderProMaintenance() {
   prosTableEl.innerHTML = "";
   for (const p of cache.professionals) {
@@ -412,7 +478,6 @@ function renderProMaintenance() {
 function renderProjectMaintenance() {
   projectsTableEl.innerHTML = "";
 
-  // Projects rows
   for (const proj of cache.projects) {
     const row = document.createElement("div");
     row.className = "table-row";
@@ -432,7 +497,6 @@ function renderProjectMaintenance() {
       await refresh();
     });
 
-    // Role list under each project
     const roleList = document.createElement("div");
     roleList.className = "card";
     roleList.style.marginTop = "10px";
@@ -454,7 +518,6 @@ function renderProjectMaintenance() {
       `).join("") : `<div class="small">—</div>`}
     `;
 
-    // wire role actions
     roleList.querySelectorAll("[data-role-edit]").forEach(btn => {
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-role-edit");
@@ -478,7 +541,146 @@ function renderProjectMaintenance() {
   }
 }
 
-/* ========= ASSIGNMENT FLOW (modal asks percent + date range) ========= */
+/* ========= GANTT ========= */
+function monthStart(d) {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+}
+function addMonths(date, months) {
+  const d = new Date(date.getTime());
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d;
+}
+function toISODateUTC(d) {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString().slice(0,10);
+}
+function monthLabel(d) {
+  const m = d.toLocaleString(undefined, { month: "short", year: "2-digit" });
+  return m;
+}
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+
+function renderGantt() {
+  if (!ganttRootEl) return;
+
+  const search = (ganttSearchEl.value || "").toLowerCase().trim();
+  const sortMode = sortGanttEl.value;
+
+  const computed = cache.professionals
+    .map(p => {
+      const util = currentUtilSummary(p.id);
+      const available = computeAvailableDate(p.id);
+      return { ...p, _util: util, _available: available };
+    })
+    .filter(p => (p.full_name + " " + p.title).toLowerCase().includes(search));
+
+  if (sortMode === "name") {
+    computed.sort((a,b) => a.full_name.localeCompare(b.full_name));
+  } else {
+    computed.sort((a,b) => {
+      const da = a._available === "—" ? "9999-12-31" : a._available;
+      const db = b._available === "—" ? "9999-12-31" : b._available;
+      return da.localeCompare(db) || a.full_name.localeCompare(b.full_name);
+    });
+  }
+
+  // timeline: current month start through next 12 months (12 columns)
+  const now = new Date();
+  const start = monthStart(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())));
+  const end = addMonths(start, 12); // exclusive
+
+  const months = Array.from({ length: 12 }, (_, i) => addMonths(start, i));
+
+  // Header
+  ganttRootEl.innerHTML = `
+    <div class="gantt-header">
+      <div class="gantt-left">
+        <div style="font-weight:700;">Professional</div>
+        <div class="small">Bars show allocations (Actual + Proposed)</div>
+      </div>
+      <div class="gantt-right">
+        <div class="gantt-months">
+          ${months.map(m => `<div class="gantt-month">${escapeHtml(monthLabel(m))}</div>`).join("")}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Rows
+  for (const p of computed) {
+    const { actual, proposed, rem } = p._util;
+    const dot = bandwidthDot(rem);
+
+    const row = document.createElement("div");
+    row.className = "gantt-row";
+
+    const left = document.createElement("div");
+    left.className = "gantt-person";
+    left.innerHTML = `
+      <div class="top">
+        <div style="font-weight:700; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          ${dot} ${escapeHtml(p.full_name)}
+        </div>
+        <div class="badge ${badgeForRemaining(rem).cls}" style="margin-left:auto;">${rem}%</div>
+      </div>
+      <div class="sub">${escapeHtml(p.title)}</div>
+      <div class="meta">
+        <div>Sold (today)</div><b>${actual}%</b>
+        <div>Proposed (today)</div><b>${proposed}%</b>
+        <div>Available Date</div><b>${p._available}</b>
+      </div>
+    `;
+
+    const lane = document.createElement("div");
+    lane.className = "gantt-lane";
+
+    // grid background
+    const grid = document.createElement("div");
+    grid.className = "gantt-grid";
+    for (let i = 0; i < 12; i++) {
+      const cell = document.createElement("div");
+      cell.className = "gantt-cell";
+      grid.appendChild(cell);
+    }
+    lane.appendChild(grid);
+
+    // bars
+    const allocs = allocationsForProfessional(p.id)
+      .filter(a => overlaps(a.start_date, a.end_date, toISODateUTC(start), toISODateUTC(addMonths(start, 12))))
+      .sort((a,b) => (a.start_date || "").localeCompare(b.start_date || ""));
+
+    for (const a of allocs) {
+      const bar = document.createElement("div");
+      bar.className = "gantt-bar" + (a.kind === "proposed" ? " proposed" : "");
+
+      const proj = cache.projects.find(x => x.id === a.project_id);
+      const role = a.project_role_id ? cache.roles.find(x => x.id === a.project_role_id) : null;
+      const label = `${proj?.name || "Project"} · ${role?.role_name || "Role"} · ${a.percent}%`;
+
+      // position within 12-month window as percentage of total ms
+      const startMs = Date.parse(a.start_date + "T00:00:00Z");
+      const endMs = Date.parse(a.end_date + "T23:59:59Z");
+      const winStartMs = start.getTime();
+      const winEndMs = end.getTime();
+
+      const leftPct = clamp01((startMs - winStartMs) / (winEndMs - winStartMs));
+      const rightPct = clamp01((endMs - winStartMs) / (winEndMs - winStartMs));
+      const widthPct = Math.max(0.005, rightPct - leftPct);
+
+      bar.style.left = `calc(${(leftPct * 100).toFixed(4)}% + 12px)`;
+      bar.style.width = `calc(${(widthPct * 100).toFixed(4)}% - 24px)`;
+      bar.title = `${a.kind.toUpperCase()} · ${label}\n${formatDateRange(a.start_date, a.end_date)}`;
+      bar.textContent = (a.kind === "proposed" ? "P: " : "A: ") + label;
+
+      lane.appendChild(bar);
+    }
+
+    row.appendChild(left);
+    row.appendChild(lane);
+    ganttRootEl.appendChild(row);
+  }
+}
+
+/* ========= ASSIGNMENT FLOW ========= */
 async function assignmentFlow({ professional_id, project_id, project_role_id, defaultPercent, defaultStart, defaultEnd, kind, label }) {
   openModal({
     title: label,
@@ -641,7 +843,9 @@ function openProjectModal(proj) {
 
 function openRoleModal(role) {
   const isNew = !role;
-  const projectOptions = cache.projects.map(p => `<option value="${p.id}"${role?.project_id===p.id?" selected":""}>${escapeHtml(p.name)}</option>`).join("");
+  const projectOptions = cache.projects
+    .map(p => `<option value="${p.id}"${role?.project_id===p.id?" selected":""}>${escapeHtml(p.name)}</option>`)
+    .join("");
 
   openModal({
     title: isNew ? "Add Role" : "Edit Role",
@@ -671,7 +875,7 @@ function openRoleModal(role) {
         </div>
         <div class="field">
           <div class="label"> </div>
-          <div class="small">Tip: required % is used as the default when dragging to assign.</div>
+          <div class="small">Used as default when dragging to assign.</div>
         </div>
       </div>
     `,
@@ -702,13 +906,15 @@ function openRoleModal(role) {
   });
 }
 
-/* ========= EVENTS ========= */
+/* ========= Tabs + Events ========= */
 tabs.forEach(t => {
   t.addEventListener("click", () => {
     tabs.forEach(x => x.classList.remove("active"));
     t.classList.add("active");
     const key = t.dataset.tab;
     Object.entries(tabPanels).forEach(([k, el]) => el.classList.toggle("active", k === key));
+    // render gantt when opening
+    if (key === "gantt") renderGantt();
   });
 });
 
@@ -717,9 +923,18 @@ sortProsEl.addEventListener("change", renderMain);
 proSearchEl.addEventListener("input", renderMain);
 projectSearchEl.addEventListener("input", renderMain);
 
+sortGanttEl.addEventListener("change", renderGantt);
+ganttSearchEl.addEventListener("input", renderGantt);
+
 btnAddPro.addEventListener("click", () => openProModal(null));
 btnAddProject.addEventListener("click", () => openProjectModal(null));
 btnAddRole.addEventListener("click", () => openRoleModal(null));
+
+/* ========= Import button (keeps your prior import implementation) ========= */
+btnImport?.addEventListener("click", () => {
+  if (typeof openImportModal === "function") return openImportModal();
+  alert("Import modal not found. If you want, I can merge the import modal code into this file too.");
+});
 
 /* ========= INIT ========= */
 async function refresh() {
