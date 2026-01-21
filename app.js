@@ -95,7 +95,7 @@ function remainingAtDate(pid, dateISO) {
 
 function computeAvailableDate(pid) {
   const start = todayISO();
-  const horizonWeeks = 26; // ~6 months
+  const horizonWeeks = 26; // ~6 months (your definition)
   for (let w = 0; w <= horizonWeeks; w++) {
     const d = addDays(start, w * 7);
     const rem = remainingAtDate(pid, d);
@@ -200,10 +200,10 @@ function render() {
 
 /* ========= MAIN ========= */
 function renderMain() {
-  const search = (proSearchEl.value || "").toLowerCase().trim();
-  const sortMode = sortProsEl.value;
+  const search = (proSearchEl?.value || "").toLowerCase().trim();
+  const sortMode = sortProsEl?.value || "name";
 
-  const proComputed = cache.professionals.map(p => {
+  const proComputed = (cache.professionals || []).map(p => {
     const util = currentUtilSummary(p.id);
     const available = computeAvailableDate(p.id);
     return { ...p, _util: util, _available: available };
@@ -223,18 +223,20 @@ function renderMain() {
     });
   }
 
-  professionalsListEl.innerHTML = "";
-  for (const p of filtered) {
-    professionalsListEl.appendChild(renderProfessionalCard(p));
+  if (professionalsListEl) {
+    professionalsListEl.innerHTML = "";
+    for (const p of filtered) professionalsListEl.appendChild(renderProfessionalCard(p));
   }
 
-  const pSearch = (projectSearchEl.value || "").toLowerCase().trim();
-  projectsListEl.innerHTML = "";
-  for (const proj of cache.projects) {
-    const roles = cache.roles.filter(r => r.project_id === proj.id);
-    const matches = (proj.name + " " + roles.map(r => r.role_name).join(" ")).toLowerCase().includes(pSearch);
-    if (!matches) continue;
-    projectsListEl.appendChild(renderProjectBlock(proj, roles));
+  const pSearch = (projectSearchEl?.value || "").toLowerCase().trim();
+  if (projectsListEl) {
+    projectsListEl.innerHTML = "";
+    for (const proj of (cache.projects || [])) {
+      const roles = (cache.roles || []).filter(r => r.project_id === proj.id);
+      const matches = (proj.name + " " + roles.map(r => r.role_name).join(" ")).toLowerCase().includes(pSearch);
+      if (!matches) continue;
+      projectsListEl.appendChild(renderProjectBlock(proj, roles));
+    }
   }
 }
 
@@ -308,8 +310,8 @@ function renderProfessionalCard(p) {
     const payload = safeParse(e.dataTransfer.getData("text/plain"));
     if (!payload || payload.type !== "role") return;
 
-    const role = cache.roles.find(r => r.id === payload.project_role_id);
-    const proj = cache.projects.find(pr => pr.id === payload.project_id);
+    const role = (cache.roles || []).find(r => r.id === payload.project_role_id);
+    const proj = (cache.projects || []).find(pr => pr.id === payload.project_id);
     if (!role || !proj) return;
 
     await assignmentFlow({
@@ -328,8 +330,8 @@ function renderProfessionalCard(p) {
 }
 
 function renderAllocLineWithDelete(a) {
-  const proj = cache.projects.find(p => p.id === a.project_id);
-  const role = a.project_role_id ? cache.roles.find(r => r.id === a.project_role_id) : null;
+  const proj = (cache.projects || []).find(p => p.id === a.project_id);
+  const role = a.project_role_id ? (cache.roles || []).find(r => r.id === a.project_role_id) : null;
   const left = `${escapeHtml(proj?.name || "Project")} · ${escapeHtml(role?.role_name || "Role")}`;
   const right = `${a.percent}% · ${formatDateRange(a.start_date, a.end_date)}`;
 
@@ -346,11 +348,11 @@ function renderAllocLineWithDelete(a) {
 
 /* ========= Projects pane: show assignees per role ========= */
 function roleAssignees(roleId) {
-  const allocs = cache.allocations.filter(a => a.project_role_id === roleId);
+  const allocs = (cache.allocations || []).filter(a => a.project_role_id === roleId);
   const byPro = new Map(); // pid -> { name, hasActual, hasProposed }
 
   for (const a of allocs) {
-    const pro = cache.professionals.find(p => p.id === a.professional_id);
+    const pro = (cache.professionals || []).find(p => p.id === a.professional_id);
     if (!pro) continue;
     const cur = byPro.get(pro.id) || { name: pro.full_name, hasActual: false, hasProposed: false };
     if (a.kind === "actual") cur.hasActual = true;
@@ -427,7 +429,7 @@ function renderProjectBlock(proj, roles) {
       const payload = safeParse(e.dataTransfer.getData("text/plain"));
       if (!payload || payload.type !== "professional") return;
 
-      const professional = cache.professionals.find(p => p.id === payload.professional_id);
+      const professional = (cache.professionals || []).find(p => p.id === payload.professional_id);
       if (!professional) return;
 
       await assignmentFlow({
@@ -453,13 +455,13 @@ function renderProMaintenance() {
   if (!prosTableEl) return;
   prosTableEl.innerHTML = "";
 
-  for (const p of cache.professionals) {
+  for (const p of (cache.professionals || [])) {
     const row = document.createElement("div");
     row.className = "table-row";
     row.innerHTML = `
       <div><b>${escapeHtml(p.full_name)}</b><div class="sub">${escapeHtml(p.title)}</div></div>
       <div class="sub">ID: <span style="font-family:var(--mono)">${p.id.slice(0, 8)}…</span></div>
-      <div class="sub">Updated: ${new Date(p.updated_at).toLocaleString()}</div>
+      <div class="sub">Updated: ${p.updated_at ? new Date(p.updated_at).toLocaleString() : "—"}</div>
       <div class="actions">
         <button class="btn ghost" data-act="edit">Edit</button>
         <button class="btn ghost" data-act="delete" style="border-color:rgba(255,107,107,.35); color:var(--danger)">Delete</button>
@@ -480,13 +482,13 @@ function renderProjectMaintenance() {
   if (!projectsTableEl) return;
   projectsTableEl.innerHTML = "";
 
-  for (const proj of cache.projects) {
+  for (const proj of (cache.projects || [])) {
     const row = document.createElement("div");
     row.className = "table-row";
     row.innerHTML = `
       <div><b>${escapeHtml(proj.name)}</b><div class="sub">${proj.start_date} → ${proj.end_date}</div></div>
-      <div class="sub">${cache.roles.filter(r => r.project_id === proj.id).length} roles</div>
-      <div class="sub">Updated: ${new Date(proj.updated_at).toLocaleString()}</div>
+      <div class="sub">${(cache.roles || []).filter(r => r.project_id === proj.id).length} roles</div>
+      <div class="sub">Updated: ${proj.updated_at ? new Date(proj.updated_at).toLocaleString() : "—"}</div>
       <div class="actions">
         <button class="btn ghost" data-act="edit">Edit</button>
         <button class="btn ghost" data-act="delete" style="border-color:rgba(255,107,107,.35); color:var(--danger)">Delete</button>
@@ -500,12 +502,11 @@ function renderProjectMaintenance() {
       await refresh();
     });
 
-    // Roles under the project
     const roleList = document.createElement("div");
     roleList.className = "card";
     roleList.style.marginTop = "10px";
 
-    const roles = cache.roles.filter(r => r.project_id === proj.id);
+    const roles = (cache.roles || []).filter(r => r.project_id === proj.id);
     roleList.innerHTML = `
       <div class="small" style="margin-bottom:10px;">Roles</div>
       ${roles.length ? roles.map(r => `
@@ -526,7 +527,7 @@ function renderProjectMaintenance() {
     roleList.querySelectorAll("[data-role-edit]").forEach(btn => {
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-role-edit");
-        const role = cache.roles.find(r => r.id === id);
+        const role = (cache.roles || []).find(r => r.id === id);
         openRoleModal(role);
       });
     });
@@ -534,7 +535,7 @@ function renderProjectMaintenance() {
     roleList.querySelectorAll("[data-role-del]").forEach(btn => {
       btn.addEventListener("click", async () => {
         const id = btn.getAttribute("data-role-del");
-        const role = cache.roles.find(r => r.id === id);
+        const role = (cache.roles || []).find(r => r.id === id);
         if (!role) return;
         if (!confirm(`Delete role "${role.role_name}"?`)) return;
         await deleteRow("project_roles", role.id);
@@ -547,7 +548,7 @@ function renderProjectMaintenance() {
   }
 }
 
-/* ========= GANTT (HARDENED) ========= */
+/* ========= GANTT (ALWAYS RENDERS ROWS) ========= */
 function renderGantt() {
   if (!ganttRootEl) return;
 
@@ -573,7 +574,6 @@ function renderGantt() {
       });
     }
 
-    // timeline window: current month start + next 12 months
     const now = new Date();
     const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 12, 1));
@@ -584,7 +584,6 @@ function renderGantt() {
     const monthLabel = (d) => d.toLocaleString(undefined, { month: "short", year: "2-digit" });
     const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
-    // Header always
     ganttRootEl.innerHTML = `
       <div class="gantt-header">
         <div class="gantt-left">
@@ -642,7 +641,6 @@ function renderGantt() {
       const lane = document.createElement("div");
       lane.className = "gantt-lane";
 
-      // grid background
       const grid = document.createElement("div");
       grid.className = "gantt-grid";
       for (let i = 0; i < 12; i++) {
@@ -652,7 +650,6 @@ function renderGantt() {
       }
       lane.appendChild(grid);
 
-      // bars
       const allocs = allocationsForProfessional(p.id)
         .filter(a => overlaps(a.start_date, a.end_date, winStartISO, winEndISO))
         .sort((a, b) => (a.start_date || "").localeCompare(b.start_date || ""));
@@ -661,8 +658,8 @@ function renderGantt() {
         const bar = document.createElement("div");
         bar.className = "gantt-bar" + (a.kind === "proposed" ? " proposed" : "");
 
-        const proj = cache.projects.find(x => x.id === a.project_id);
-        const role = a.project_role_id ? cache.roles.find(x => x.id === a.project_role_id) : null;
+        const proj = (cache.projects || []).find(x => x.id === a.project_id);
+        const role = a.project_role_id ? (cache.roles || []).find(x => x.id === a.project_role_id) : null;
         const label = `${proj?.name || "Project"} · ${role?.role_name || "Role"} · ${a.percent}%`;
 
         const startMs = Date.parse(a.start_date + "T00:00:00Z");
@@ -707,7 +704,7 @@ async function assignmentFlow({ professional_id, project_id, project_role_id, de
         <div class="field">
           <div class="label">Allocation kind</div>
           <select id="allocKind" class="input">
-            <option value="actual"${kind==="actual"?" selected":""}>Actual (Sold)</option>
+            <option value="actual"${kind === "actual" ? " selected" : ""}>Actual (Sold)</option>
             <option value="proposed">Proposed</option>
           </select>
         </div>
@@ -734,14 +731,8 @@ async function assignmentFlow({ professional_id, project_id, project_role_id, de
       const start_date = document.getElementById("allocStart").value;
       const end_date = document.getElementById("allocEnd").value;
 
-      if (!start_date || !end_date) {
-        alert("Please provide start/end dates.");
-        return false;
-      }
-      if (end_date < start_date) {
-        alert("End date cannot be before start date.");
-        return false;
-      }
+      if (!start_date || !end_date) { alert("Please provide start/end dates."); return false; }
+      if (end_date < start_date) { alert("End date cannot be before start date."); return false; }
 
       await createAllocation({
         professional_id,
@@ -759,25 +750,23 @@ async function assignmentFlow({ professional_id, project_id, project_role_id, de
   });
 }
 
-/* ========= MODALS ========= */
+/* ========= MODALS CORE ========= */
 function openModal({ title, bodyHtml, onSave }) {
   modalTitle.textContent = title;
   modalBody.innerHTML = bodyHtml;
   modalState = { onSave };
   modalBackdrop.classList.remove("hidden");
 }
-
 function closeModal() {
   modalBackdrop.classList.add("hidden");
   modalState = null;
 }
-
-modalClose.addEventListener("click", closeModal);
-modalCancel.addEventListener("click", closeModal);
-modalBackdrop.addEventListener("click", (e) => {
+modalClose?.addEventListener("click", closeModal);
+modalCancel?.addEventListener("click", closeModal);
+modalBackdrop?.addEventListener("click", (e) => {
   if (e.target === modalBackdrop) closeModal();
 });
-modalSave.addEventListener("click", async () => {
+modalSave?.addEventListener("click", async () => {
   if (!modalState?.onSave) return closeModal();
   try {
     const ok = await modalState.onSave();
@@ -788,7 +777,7 @@ modalSave.addEventListener("click", async () => {
   }
 });
 
-/* ========= CRUD MODALS ========= */
+/* ========= CRUD MODALS (WORKING) ========= */
 function openProModal(p) {
   const isNew = !p;
   openModal({
@@ -846,6 +835,7 @@ function openProjectModal(proj) {
       const name = document.getElementById("projName").value.trim();
       const start_date = document.getElementById("projStart").value;
       const end_date = document.getElementById("projEnd").value;
+
       if (!name || !start_date || !end_date) { alert("All fields required."); return false; }
       if (end_date < start_date) { alert("End date cannot be before start date."); return false; }
 
@@ -863,7 +853,7 @@ function openProjectModal(proj) {
 
 function openRoleModal(role) {
   const isNew = !role;
-  const projectOptions = cache.projects
+  const projectOptions = (cache.projects || [])
     .map(p => `<option value="${p.id}"${role?.project_id === p.id ? " selected" : ""}>${escapeHtml(p.name)}</option>`)
     .join("");
 
@@ -922,28 +912,30 @@ function openRoleModal(role) {
   });
 }
 
+/* ========= Maintenance buttons ========= */
+btnAddPro?.addEventListener("click", () => openProModal(null));
+btnAddProject?.addEventListener("click", () => openProjectModal(null));
+btnAddRole?.addEventListener("click", () => openRoleModal(null));
+
 /* ========= Tabs + Events ========= */
 tabs.forEach(t => {
   t.addEventListener("click", () => {
     tabs.forEach(x => x.classList.remove("active"));
     t.classList.add("active");
     const key = t.dataset.tab;
-    Object.entries(tabPanels).forEach(([k, el]) => el.classList.toggle("active", k === key));
+    Object.entries(tabPanels).forEach(([k, el]) => el && el.classList.toggle("active", k === key));
     if (key === "gantt") renderGantt();
   });
 });
 
-btnRefresh.addEventListener("click", () => refresh());
-sortProsEl.addEventListener("change", renderMain);
-proSearchEl.addEventListener("input", renderMain);
-projectSearchEl.addEventListener("input", renderMain);
+btnRefresh?.addEventListener("click", () => refresh());
+
+sortProsEl?.addEventListener("change", renderMain);
+proSearchEl?.addEventListener("input", renderMain);
+projectSearchEl?.addEventListener("input", renderMain);
 
 sortGanttEl?.addEventListener("change", renderGantt);
 ganttSearchEl?.addEventListener("input", renderGantt);
-
-btnAddPro?.addEventListener("click", () => openProModal(null));
-btnAddProject?.addEventListener("click", () => openProjectModal(null));
-btnAddRole?.addEventListener("click", () => openRoleModal(null));
 
 btnImport?.addEventListener("click", () => {
   if (typeof openImportModal === "function") return openImportModal();
@@ -967,10 +959,11 @@ function safeParse(s) {
 
 function escapeHtml(str) {
   return String(str ?? "")
-    .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;").replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replaceAll("&","&amp;").replaceAll("<","&lt;")
+    .replaceAll(">","&gt;").replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
 }
+
 function escapeAttr(str) {
   return escapeHtml(str).replaceAll("\n", " ");
 }
