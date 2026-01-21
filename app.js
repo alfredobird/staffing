@@ -113,8 +113,8 @@ function currentUtilSummary(pid) {
 
 function bandwidthDot(rem) {
   // green if above 80%, red if below 50%, yellow otherwise
-  if (rem > 80) return "🔴";
-  if (rem < 50) return "🟢";
+  if (rem > 80) return "🟢";
+  if (rem < 50) return "🔴";
   return "🟡";
 }
 
